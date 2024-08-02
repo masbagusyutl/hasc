@@ -1,70 +1,100 @@
 import requests
 import time
+import random
 import json
-from datetime import datetime, timedelta
+import datetime
 
-# Fungsi untuk membaca Authorization dari data.txt
-def get_authorizations():
-    with open('data.txt', 'r') as file:
-        return [line.strip() for line in file.readlines()]
+# Read account data from data.txt
+def read_accounts(file_path):
+    with open(file_path, 'r') as file:
+        accounts = file.readlines()
+    return [account.strip() for account in accounts]
 
-# Fungsi untuk menampilkan hitung mundur dengan tampilan waktu yang bergerak
-def countdown_timer(seconds):
-    while seconds:
-        mins, secs = divmod(seconds, 60)
-        hours, mins = divmod(mins, 60)
-        timer = f'{hours:02d}:{mins:02d}:{secs:02d}'
-        print(f"\rCountdown: {timer}", end="")
-        time.sleep(1)
-        seconds -= 1
-    print("\nCountdown complete. Restarting...")
-
-# Fungsi untuk melakukan klaim
-def claim_reward(auth):
-    url = "https://crypto-landing-cat-062fa2faee4e.herokuapp.com/users/claim"
+# Get user info
+def get_user_info(auth_token):
     headers = {
-        "Accept": "application/json, text/plain, */*",
-        "Accept-Encoding": "gzip, deflate, br, zstd",
-        "Accept-Language": "en-GB,en;q=0.9,en-US;q=0.8",
-        "Authorization": auth,
-        "Cache-Control": "no-cache",
-        "Connection": "keep-alive",
-        "Content-Length": "2",
-        "Content-Type": "application/json",
-        "Host": "crypto-landing-cat-062fa2faee4e.herokuapp.com",
-        "Origin": "https://steady-alfajores-6f6a13.netlify.app",
-        "Pragma": "no-cache",
-        "Referer": "https://steady-alfajores-6f6a13.netlify.app/",
-        "Sec-Ch-Ua": "\"Not/A)Brand\";v=\"8\", \"Chromium\";v=\"126\", \"Microsoft Edge\";v=\"126\", \"Microsoft Edge WebView2\";v=\"126\"",
-        "Sec-Ch-Ua-Mobile": "?0",
-        "Sec-Ch-Ua-Platform": "\"Windows\"",
-        "Sec-Fetch-Dest": "empty",
-        "Sec-Fetch-Mode": "cors",
-        "Sec-Fetch-Site": "cross-site",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 Edg/126.0.0.0"
+        'Accept': 'application/json, text/plain, */*',
+        'Authorization': auth_token
     }
-    
-    response = requests.post(url, headers=headers, json={})
-    return response.status_code
+    response = requests.get('https://hashcats-gateway-ffa6af9b026a.herokuapp.com/users', headers=headers)
+    if response.status_code == 200:
+        data = response.json()
+        print(f"Username: {data['user']['userName']}, Mined Coins: {data['minedCoins']}, Shard: {data['user']['shard']}")
+        return data
+    else:
+        print(f"Failed to get user info: {response.status_code}")
+        print(response.text)
 
-# Fungsi utama untuk menjalankan proses klaim
+# Start tapping task
+def start_tapping(auth_token):
+    headers = {
+        'Accept': 'application/json, text/plain, */*',
+        'Authorization': auth_token,
+        'Content-Type': 'application/json'
+    }
+    payload = {
+        'dateStartMs': int(time.time() * 1000)
+    }
+    response = requests.post('https://hashcats-gateway-ffa6af9b026a.herokuapp.com/users/start-tapping', headers=headers, json=payload)
+    if response.status_code == 200:
+        data = response.json()
+        return data['token']
+    else:
+        print(f"Failed to start tapping: {response.status_code}")
+        print(response.text)
+
+# Perform tap tap task
+def perform_tap_tap(auth_token, token, tap_balance):
+    headers = {
+        'Accept': 'application/json, text/plain, */*',
+        'Authorization': auth_token,
+        'Content-Type': 'application/json'
+    }
+    payload = {
+        'tapBalance': tap_balance,
+        'token': token
+    }
+    response = requests.post('https://hashcats-gateway-ffa6af9b026a.herokuapp.com/users/save-tap-balance', headers=headers, json=payload)
+    if response.status_code == 200:
+        data = response.json()
+        print(f"Balance: {data['balance']}, Energy: {data['energy']}")
+        return data
+    else:
+        print(f"Failed to perform tap tap: {response.status_code}")
+        print(response.text)
+
+# Main function
 def main():
-    authorizations = get_authorizations()
-    total_accounts = len(authorizations)
-    print(f"Total accounts: {total_accounts}")
+    accounts = read_accounts('data.txt')
+    print(f"Total accounts: {len(accounts)}")
 
-    while True:
-        for i, auth in enumerate(authorizations):
-            print(f"\nProcessing account {i+1}/{total_accounts}")
-            status = claim_reward(auth)
-            if status == 200:
-                print(f"Account {i+1} claim successful!")
-            else:
-                print(f"Account {i+1} claim failed with status code: {status}")
-            time.sleep(5)  # Jeda 5 detik sebelum beralih ke akun berikutnya
+    for idx, auth_token in enumerate(accounts):
+        print(f"Processing account {idx + 1} of {len(accounts)}")
 
-        print("\nAll accounts processed. Starting countdown for 3.5 hours.")
-        countdown_timer(3 * 3600 + 1800)  # Hitung mundur 3.5 jam (3 jam + 1800 detik)
+        # Get user info
+        user_info = get_user_info(auth_token)
+
+        # Start tapping task
+        token = start_tapping(auth_token)
+
+        # Perform first tap tap task with random tapBalance between 2 and 10
+        initial_tap_balance = random.randint(2, 10)
+        tap_tap_data = perform_tap_tap(auth_token, token, initial_tap_balance)
+
+        # Perform subsequent tap tap tasks based on the energy from the first tap tap
+        remaining_energy = tap_tap_data['energy']
+        while remaining_energy > 0:
+            tap_balance = random.randint(5, min(200, remaining_energy))
+            tap_tap_data = perform_tap_tap(auth_token, token, tap_balance)
+            remaining_energy -= tap_balance
+
+        # Delay before processing the next account
+        time.sleep(5)
+
+    # Countdown timer for 3.5 hours
+    for remaining in range(3*60*60 + 30*60, 0, -1):
+        print(f"Time remaining for next run: {datetime.timedelta(seconds=remaining)}", end='\r')
+        time.sleep(1)
 
 if __name__ == "__main__":
     main()
